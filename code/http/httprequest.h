@@ -20,7 +20,9 @@
 
 class HttpRequest {
 public:
-    enum PARSE_STATE {
+// 加 class 使用强枚举，可以防止命名冲突
+// 自动机，自动实现状态转换，初始状态为REQUEST_LINE
+    enum class PARSE_STATE {
         REQUEST_LINE,
         HEADERS,
         BODY,
@@ -74,7 +76,7 @@ private:
     std::string method_, path_, version_, body_;
     std::unordered_map<std::string, std::string> header_;
     std::unordered_map<std::string, std::string> post_;
-
+    // 声明的时候有static，但是在具体实例化的时候只修饰了const？
     static const std::unordered_set<std::string> DEFAULT_HTML;
     static const std::unordered_map<std::string, int> DEFAULT_HTML_TAG;
     static int ConverHex(char ch);

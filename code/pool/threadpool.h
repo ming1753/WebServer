@@ -12,10 +12,12 @@
 #include <queue>
 #include <thread>
 #include <functional>
+
 class ThreadPool {
 public:
     explicit ThreadPool(size_t threadCount = 8): pool_(std::make_shared<Pool>()) {
             assert(threadCount > 0);
+            // 创建了threadCount个线程，每个线程不停地从pool->tasks中取出任务处理
             for(size_t i = 0; i < threadCount; i++) {
                 std::thread([pool = pool_] {
                     std::unique_lock<std::mutex> locker(pool->mtx);
@@ -58,10 +60,14 @@ public:
     }
 
 private:
+    // 经典池结构
     struct Pool {
+        // 池子锁
         std::mutex mtx;
+        // 条件变量
         std::condition_variable cond;
         bool isClosed;
+        //  function<void()>的task的集合
         std::queue<std::function<void()>> tasks;
     };
     std::shared_ptr<Pool> pool_;

@@ -15,7 +15,7 @@ const unordered_map<string, int> HttpRequest::DEFAULT_HTML_TAG {
 
 void HttpRequest::Init() {
     method_ = path_ = version_ = body_ = "";
-    state_ = REQUEST_LINE;
+    state_ = PARSE_STATE::REQUEST_LINE;
     header_.clear();
     post_.clear();
 }
@@ -32,24 +32,25 @@ bool HttpRequest::parse(Buffer& buff) {
     if(buff.ReadableBytes() <= 0) {
         return false;
     }
-    while(buff.ReadableBytes() && state_ != FINISH) {
+    while(buff.ReadableBytes() && state_ != PARSE_STATE::FINISH) {
+        // search用于查找第一次出现的位置(前向迭代器)，两个序列常用表示方法，a.begin(), a.begin() + n
         const char* lineEnd = search(buff.Peek(), buff.BeginWriteConst(), CRLF, CRLF + 2);
         std::string line(buff.Peek(), lineEnd);
         switch(state_)
         {
-        case REQUEST_LINE:
+        case PARSE_STATE::REQUEST_LINE:
             if(!ParseRequestLine_(line)) {
                 return false;
             }
             ParsePath_();
             break;    
-        case HEADERS:
+        case PARSE_STATE::HEADERS:
             ParseHeader_(line);
             if(buff.ReadableBytes() <= 2) {
-                state_ = FINISH;
+                state_ = PARSE_STATE::FINISH;
             }
             break;
-        case BODY:
+        case PARSE_STATE::BODY:
             ParseBody_(line);
             break;
         default:
@@ -61,6 +62,7 @@ bool HttpRequest::parse(Buffer& buff) {
     LOG_DEBUG("[%s], [%s], [%s]", method_.c_str(), path_.c_str(), version_.c_str());
     return true;
 }
+
 
 void HttpRequest::ParsePath_() {
     if(path_ == "/") {
@@ -76,6 +78,22 @@ void HttpRequest::ParsePath_() {
     }
 }
 
+// http请求例子
+//
+// POST /chapter17/usr.html HTTP/1.1
+// Accept: iamge/jpeg, application/x-ms-application, ..., */*
+// Referer: http://localhost:8088/chapter17/user/register.html?
+// code=100&time=123123
+// Accept-Language: zh-CN
+// User-Agnet: Mozilla/4.0 (cmpatiable; MSIE 8.0; Windows NT 6.1;)
+// Content-Type: application/x-www-form-urlencoded
+// Host: localhost:8088
+// Content-Length: 112
+// Cache-Control: no-cache
+// Cookie: JSESSIONID=24DFGHUJGUHIJOGHJKLGHBJKN
+//
+// name=tom&passwd=1234&realName=tomson
+
 bool HttpRequest::ParseRequestLine_(const string& line) {
     regex patten("^([^ ]*) ([^ ]*) HTTP/([^ ]*)$");
     smatch subMatch;
@@ -83,7 +101,7 @@ bool HttpRequest::ParseRequestLine_(const string& line) {
         method_ = subMatch[1];
         path_ = subMatch[2];
         version_ = subMatch[3];
-        state_ = HEADERS;
+        state_ = PARSE_STATE::HEADERS;
         return true;
     }
     LOG_ERROR("RequestLine Error");
@@ -97,14 +115,14 @@ void HttpRequest::ParseHeader_(const string& line) {
         header_[subMatch[1]] = subMatch[2];
     }
     else {
-        state_ = BODY;
+        state_ = PARSE_STATE::BODY;
     }
 }
 
 void HttpRequest::ParseBody_(const string& line) {
     body_ = line;
     ParsePost_();
-    state_ = FINISH;
+    state_ = PARSE_STATE::FINISH;
     LOG_DEBUG("Body:%s, len:%d", line.c_str(), line.size());
 }
 
@@ -178,9 +196,11 @@ bool HttpRequest::UserVerify(const string &name, const string &pwd, bool isLogin
     if(name == "" || pwd == "") { return false; }
     LOG_INFO("Verify name:%s pwd:%s", name.c_str(), pwd.c_str());
     MYSQL* sql;
+    // 单例模式，有则返回单例，无则新建
     SqlConnRAII(&sql,  SqlConnPool::Instance());
     assert(sql);
     
+    // flag表示是否允许访问
     bool flag = false;
     unsigned int j = 0;
     char order[256] = { 0 };
@@ -192,10 +212,12 @@ bool HttpRequest::UserVerify(const string &name, const string &pwd, bool isLogin
     snprintf(order, 256, "SELECT username, password FROM user WHERE username='%s' LIMIT 1", name.c_str());
     LOG_DEBUG("%s", order);
 
+    // (猜测)查询成功返回0，失败返回1
     if(mysql_query(sql, order)) { 
         mysql_free_result(res);
         return false; 
     }
+
     res = mysql_store_result(sql);
     j = mysql_num_fields(res);
     fields = mysql_fetch_fields(res);
@@ -203,7 +225,7 @@ bool HttpRequest::UserVerify(const string &name, const string &pwd, bool isLogin
     while(MYSQL_ROW row = mysql_fetch_row(res)) {
         LOG_DEBUG("MYSQL ROW: %s %s", row[0], row[1]);
         string password(row[1]);
-        /* 注册行为 且 用户名未被使用*/
+        // 如果是登录，检查密码是否相等
         if(isLogin) {
             if(pwd == password) { flag = true; }
             else {
@@ -211,7 +233,8 @@ bool HttpRequest::UserVerify(const string &name, const string &pwd, bool isLogin
                 LOG_DEBUG("pwd error!");
             }
         } 
-        else { 
+        // 如果是注册，那么用户已被使用
+        else {
             flag = false; 
             LOG_DEBUG("user used!");
         }
@@ -230,6 +253,7 @@ bool HttpRequest::UserVerify(const string &name, const string &pwd, bool isLogin
         }
         flag = true;
     }
+    // 单例生命周期问题？
     SqlConnPool::Instance()->FreeConn(sql);
     LOG_DEBUG( "UserVerify success!!");
     return flag;
