@@ -51,18 +51,28 @@ public:
         return request_.IsKeepAlive();
     }
 
+    // LT 水平触发，ET 边缘触发
+    // ET的要求是需要一直读写，直到返回EAGAIN，否则就会遗漏事件。
+    // 而LT的处理过程中，直到返回EAGAIN不是硬性要求，
+    // 但通常的处理过程都会读写直到返回EAGAIN，
+    // 但LT比ET多了一个开关EPOLLOUT事件的步骤。
     static bool isET;
     static const char* srcDir;
+    // 对该变量的操作是原子的
+    // static表示所有对象共有该变量
     static std::atomic<int> userCount;
     
 private:
    
     int fd_;
-    struct  sockaddr_in addr_;
-
+    // socket地址，ipv4
+    struct sockaddr_in addr_;
+    // 
     bool isClose_;
     
     int iovCnt_;
+    // iovec由基地址和长度组成
+    // iov_[0]是响应头，iov_[1]是响应文件
     struct iovec iov_[2];
     
     Buffer readBuff_; // 读缓冲区

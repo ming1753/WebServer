@@ -16,8 +16,8 @@ HttpConn::HttpConn() {
     isClose_ = true;
 };
 
-HttpConn::~HttpConn() { 
-    Close(); 
+HttpConn::~HttpConn() {
+    Close();
 };
 
 void HttpConn::init(int fd, const sockaddr_in& addr) {
@@ -58,6 +58,8 @@ int HttpConn::GetPort() const {
 }
 
 ssize_t HttpConn::read(int* saveErrno) {
+    // size_t表示无符号整数，32位系统中4个字节，64位系统中8个字节
+    // ssize_t表示有符号整数，32位系统上等同于int，64位系统上等同于long int
     ssize_t len = -1;
     do {
         len = readBuff_.ReadFd(fd_, saveErrno);
